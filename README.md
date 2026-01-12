@@ -6,6 +6,6 @@ Resulting OTUs were queried against the SILVA SSU/LSU database as well as an inh
 In a separate R script, the two OTU classifications were joined by accession number and filtered by minimum percent identity as follows: ≥98% = genus-level (custom database), ≥95% = family-level (custom database), ≥90% = order-level (custom database), <90% = SILVA annotation.
 OTUs with taxonomic assignment confidence <85% were discarded.
 
-This script visualises community structure using Bray–Curtis nMDS ('vegan') and compares detections across methods using log-corrected abundance heat maps (eDNA vs. field surveys).
+This script visualises community structure using Bray-Curtis nMDS ('vegan') and compares detections across methods using log-corrected abundance heat maps (eDNA vs. field surveys).
 All figures generated using 'ggplot2' with the 'viridis' colour palate. 
 For further annotation of figures, phylogenetic trees were generated using PhyloT and visualized in iTOL.
