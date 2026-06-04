@@ -1,7 +1,7 @@
 #eDNA community analysis 
-  #Grace 2025 
+  #Grace S, May 2026 
 
-#eDNA community data is clean and ready to plot. Making figures - heatmap comparing eDNA to field surveys and PCA of communities at each site by method. 
+#Making figures - heatmap comparing eDNA to field surveys and PCoA of communities at each site. 
 
 #nMDS
 library(vegan)
@@ -10,93 +10,84 @@ library(dplyr)
 library(tidyr)
 library(viridis)
 library(tidyverse)
-
-# Read data
-dat <- read.csv("methods_comparison1.txt") #this is a spreadsheet with the species detection at each site by method eDNA vs method field surveys
-
+library(pairwiseAdonis)
 
 # 1: heatmaps -------------------------------------------------------------
+
+# Read data
+dat <- read.csv("heatmap_detections.csv") #this is a spreadsheet with the relative taxon detection (0-1) at each site by method eDNA vs method field surveys
 
 #ggplot like long data
 dat_long <- dat %>%
   pivot_longer(
-    cols = !Taxa,       # pivot all columns except Class
+    cols = !Taxa,       # pivot all columns except Taxa
     names_to = "Site",
-    values_to = "Value") %>%
-  mutate(Taxa = factor(Taxa, levels = unique(Taxa)),  # keep original Class order
-    Site  = factor(Site,  levels = colnames(dat)[-ncol(dat)]))  # keep original site order
-  
+    values_to = "Abundance") %>%
+  mutate(Taxa = factor(Taxa, levels = unique(Taxa)))  # keep original Class order
+
 # plot heatmap
-ggplot(dat_long, aes(x = Site, y = Taxa, fill = Value)) +
+ggplot(dat_long, aes(x = Site, y = Taxa, fill = Abundance)) +
   geom_tile() +
   scale_fill_viridis_c(option = "D", direction = 1) +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme_classic() 
 
 #done - add annotations externally. 
 
 
-# 2: nMDS -----------------------------------------------------------------
+# 2: PCoA -----------------------------------------------------------------
+dat <- read.csv("OTU.csv") #this is my LotuS2 OTU abundance matrix containing all ~2000 ASV detections across all 9 samples. 
 
-# Separate numeric data and Class
-otu_matrix <- dat %>% 
-  select(-Class) %>% 
-  as.matrix()
+head(dat)
+#1910 obs of 9 variables 
 
-rownames(otu_matrix) <- dat$Class
+#vegan likes samples as rows
+tdat <- t(dat)
 
-# Aggregate abundance by Class across replicates
-otu_agg <- dat %>%
-  group_by(Class) %>%
-  summarise(across(X1DC:X2RL, sum)) %>%
-  column_to_rownames("Class")
+# Calculate Bray-Curtis dissimilarity
+bray <- vegdist(tdat, method = "bray")
 
-# Transpose: rows = sites, columns = classes
-otu_t <- t(otu_agg)
+# Run PCoA
+pcoa <- cmdscale(bray, k = 2, eig = TRUE)
 
-# NMDS using Bray-Curtis dissimilarity
-nmds <- metaMDS(otu_t, distance = "bray", k = 2, trymax = 100)
-nmds
+# Extract coordinates
+pcoa_scores <- as.data.frame(pcoa$points)
+colnames(pcoa_scores) <- c("PCoA1", "PCoA2")
 
-#extract scores
-site_scores <- as.data.frame(scores(nmds, display = "sites"))
-site_scores$Site <- rownames(site_scores)
+# Add site grouping
+pcoa_scores$Site <- c("Duck Creek", "Duck Creek", "Duck Creek",
+                      "Dilli Swamp", "Dilli Swamp", "Dilli Swamp",
+                      "Red Lagoon", "Red Lagoon", "Red Lagoon")
+pcoa_scores$Sample <- rownames(pcoa_scores)
 
-site_scores <- site_scores %>%
-  mutate(
-    Peatland = case_when(
-      grepl("DC", Site) ~ "DC",
-      grepl("DS", Site) ~ "DS",
-      grepl("RL", Site) ~ "RL"),
-    Method = case_when(
-      grepl("X1", Site) ~ "X1",
-      grepl("X2", Site) ~ "X2"))
-    
+# Calculate % variance explained by each axis
+eig_percent <- round(pcoa$eig / sum(pcoa$eig[pcoa$eig > 0]) * 100, 1)
 
 # Plot
-ggplot(site_scores,
-       aes(x = NMDS1, y = NMDS2,
-           shape = Method,
-           color = Peatland)) +
-  scale_shape_manual(values = c(
-      X1 = 16,  # circle
-      X2 = 17))+   # triangle
-  scale_color_manual(
-    values = c(
-      RL = "#FDE726",  
-      DC = "#440154",   
-      DS = "#21908C"))+
-  coord_equal() +
-  theme_classic()
+ggplot(pcoa_scores, aes(x = PCoA1, y = PCoA2, colour = Site, label = Sample)) +
+  geom_point() +
+  labs(x = paste0("PCoA1 (", eig_percent[1], "%)"),
+       y = paste0("PCoA2 (", eig_percent[2], "%)")) +
+  theme_classic() 
 
-##PERMANOVA
-Method <- factor(c("eDNA", "eDNA", "eDNA", "Field", "Field", "Field"))
-Site <- factor(c("Duck Creek", "Dilli Swamp", "Red Lagoon",
-                 "Duck Creek", "Dilli Swamp", "Red Lagoon"))
+#Dilli Swamp is quite distinct from the others; some overlap between Duck Creek and Red Lagoon.
+#Fairly high percent variance: PCoA1 49.8%; PCoA2 19.8%.
 
-# Check
-cbind(Method, Site)
-permanova <- adonis2(otu_t ~ Method + Site, method = "bray", permutations = 999, by = "terms")
+#Run permanova  
+
+# Define site groupings
+groups <- c("DC", "DC", "DC", "DS", "DS", "DS", "RL", "RL", "RL")
+
+# PERMANOVA
+permanova <- adonis2(bray ~ groups, permutations = 999)
 print(permanova)
 
-#done!
+# PERMDISP
+disp <- betadisper(bray, groups)
+permutest(disp)
+
+#Also run pairwise analysis 
+
+pairwise <- pairwise.adonis(bray, groups, p.adjust.m = "bonferroni")
+print(pairwise)
+
+#Differences between sites are not statistically significant due to the sample size. 
